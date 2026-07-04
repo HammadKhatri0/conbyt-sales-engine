@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LeadStatus {
+  QUEUED
+  CALLING
+  BOOKED
+  NOT_INTERESTED
+  VOICEMAIL
+  CALLBACK_REQUESTED
+  NO_ANSWER
+  WRONG_NUMBER
+  DO_NOT_CALL
+}
+
+enum CampaignStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+}
+
+model Lead {
+  id             String   @id @default(cuid())
+  name           String
+  phone          String   @unique
+  company        String?
+  industry       String?
+  openerHook     String?  @map("opener_hook")
+  status         LeadStatus @default(QUEUED)
+  retellCallId   String?  @unique @map("retell_call_id")
+  timezone       String?
+  campaignId     String?  @map("campaign_id")
+  campaign       Campaign? @relation(fields: [campaignId], references: [id])
+  callAttempts   CallAttempt[]
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("leads")
+}
+
+model CallAttempt {
+  id                  String   @id @default(cuid())
+  leadId              String   @map("lead_id")
+  lead                Lead     @relation(fields: [leadId], references: [id])
+  retellCallId        String   @unique @map("retell_call_id")
+  outcome             LeadStatus?
+  transcript          String?  @db.Text
+  summary             String?  @db.Text
+  recordingUrl        String?  @map("recording_url")
+  durationSeconds     Int?     @map("duration_seconds")
+  disconnectionReason String?  @map("disconnection_reason")
+  rawPayload          Json?    @map("raw_payload")
+  startedAt           DateTime? @map("started_at")
+  endedAt             DateTime? @map("ended_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@map("call_attempts")
+}
+
+model Campaign {
+  id            String   @id @default(cuid())
+  name          String
+  status        CampaignStatus @default(DRAFT)
+  currentLeadId String?  @map("current_lead_id")
+  leads         Lead[]
+  gapSeconds    Int      @default(30) @map("gap_seconds")
+  callStartHour Int      @default(9) @map("call_start_hour")
+  callEndHour   Int      @default(18) @map("call_end_hour")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("campaigns")
+}
