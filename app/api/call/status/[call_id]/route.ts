@@ -24,9 +24,9 @@ function toDisplayStatus(
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { call_id: string } }
+  { params }: { params: Promise<{ call_id: string }> }
 ) {
-  const { call_id } = params;
+  const { call_id } = await params;
 
   if (!call_id) {
     return NextResponse.json({ error: "call_id is required" }, { status: 400 });

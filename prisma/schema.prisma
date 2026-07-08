@@ -59,6 +59,16 @@ model CallAttempt {
   rawPayload          Json?    @map("raw_payload")
   startedAt           DateTime? @map("started_at")
   endedAt             DateTime? @map("ended_at")
+
+  // New: post-call analysis fields from Retell
+  mainPainPoint       String?  @map("main_pain_point") @db.Text
+  prospectEmail       String?  @map("prospect_email")
+  preferredTimes      String?  @map("preferred_times")
+  bookedDate          String?  @map("booked_date")
+  bookedDay           String?  @map("booked_day")
+  bookedTime          String?  @map("booked_time")
+  teamSize            String?  @map("team_size")
+
   createdAt           DateTime @default(now()) @map("created_at")
 
   @@map("call_attempts")

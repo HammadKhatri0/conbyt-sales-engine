@@ -1,9 +1,7 @@
 // app/api/call/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import Retell from "retell-sdk";
 import { prisma } from "@/lib/prisma";
-
-const client = new Retell({ apiKey: process.env.RETELL_API_KEY! });
+import { placeCallForLead } from "@/lib/retell-call";
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,8 +22,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Reuse existing lead if this phone already exists (e.g. re-calling from Leads page),
-    // otherwise create a fresh one.
+    // Reuse existing lead if this phone already exists, otherwise create a fresh one.
     let lead = await prisma.lead.findUnique({ where: { phone } });
 
     if (!lead) {
@@ -36,41 +33,38 @@ export async function POST(req: NextRequest) {
           company: company ?? null,
           industry: industry ?? null,
           openerHook: openerHook ?? null,
-          status: "CALLING",
+          status: "QUEUED",
         },
       });
     } else {
+      // Update contact details in case they changed since last import/call
       lead = await prisma.lead.update({
         where: { id: lead.id },
-        data: { status: "CALLING" },
+        data: {
+          name,
+          company: company ?? lead.company,
+          industry: industry ?? lead.industry,
+          openerHook: openerHook ?? lead.openerHook,
+        },
       });
     }
 
-    const call = await client.call.createPhoneCall({
-      from_number: process.env.RETELL_FROM_NUMBER!,
-      to_number: phone,
-      override_agent_id: process.env.RETELL_AGENT_ID!,
-      retell_llm_dynamic_variables: {
-        customer_name: name,
-        first_name: name.split(" ")[0],
-        company_name: company ?? "",
-        industry: industry ?? "",
-        opener_hook: openerHook ?? "",
-      },
-    });
+    const result = await placeCallForLead(lead.id);
 
-    // Save retell_call_id immediately so the webhook can match this lead when call_ended fires.
-    await prisma.lead.update({
-      where: { id: lead.id },
-      data: { retellCallId: call.call_id },
-    });
+    if (!result.success) {
+      return NextResponse.json({ error: result.error || "Failed to place call" }, { status: 500 });
+    }
 
-    return NextResponse.json({ success: true, call_id: call.call_id, lead_id: lead.id });
+    // Re-fetch to get the retell_call_id that placeCallForLead just saved
+    const updatedLead = await prisma.lead.findUnique({ where: { id: lead.id } });
+
+    return NextResponse.json({
+      success: true,
+      call_id: updatedLead?.retellCallId,
+      lead_id: lead.id,
+    });
   } catch (err) {
-    console.error("Retell call error:", err);
-    return NextResponse.json(
-      { error: "Failed to place call" },
-      { status: 500 }
-    );
+    console.error("Call initiation error:", err);
+    return NextResponse.json({ error: "Failed to place call" }, { status: 500 });
   }
 }

@@ -32,7 +32,7 @@ const STATUS_STYLES: Record<string, string> = {
   CALLING: "bg-blue-500/15 text-blue-300 border-blue-500/30",
   BOOKED: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
   NOT_INTERESTED: "bg-red-500/15 text-red-300 border-red-500/30",
-  LINK_EMAILED: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  LINK_EMAILED: "bg-yellow-500/15 text-yellow-300 border-yellow-500/30",
   CALLBACK_REQUESTED: "bg-purple-500/15 text-purple-300 border-purple-500/30",
   NO_ANSWER: "bg-gray-500/15 text-gray-300 border-gray-500/30",
   WRONG_NUMBER: "bg-red-500/15 text-red-300 border-red-500/30",

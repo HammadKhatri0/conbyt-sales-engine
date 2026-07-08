@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/leads", label: "Leads" },
   { href: "/queue", label: "Queue" },
+  { href: "/history", label: "History" },
 ];
 
 export default function Navbar() {
@@ -17,7 +18,7 @@ export default function Navbar() {
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-xl">
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-accent to-accent-2 flex items-center justify-center">
+          <div className="w-7 h-7 rounded-lg bg-linear-to-br from-accent to-accent-2 flex items-center justify-center">
             <span className="text-white text-sm font-bold">C</span>
           </div>
           <span className="font-semibold tracking-tight">Conbyt</span>
