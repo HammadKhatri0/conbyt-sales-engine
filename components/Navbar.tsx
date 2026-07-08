@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { href: "/leads", label: "Leads" },
   { href: "/queue", label: "Queue" },
   { href: "/history", label: "History" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export default function Navbar() {

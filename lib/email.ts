@@ -1,7 +1,6 @@
 // lib/email.ts
 import { Resend } from "resend";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { getSettings } from "@/lib/settings";
 
 const FROM_ADDRESS = "Conbyt <onboarding@resend.dev>";
 
@@ -18,6 +17,14 @@ export async function sendBookingLinkEmail({
   companyName,
   bookingUrl,
 }: SendBookingLinkParams): Promise<{ success: boolean; error?: string }> {
+  const settings = await getSettings();
+
+  if (!settings.resendApiKey) {
+    return { success: false, error: "Resend API key not set in Settings" };
+  }
+
+  const resend = new Resend(settings.resendApiKey);
+
   try {
     const subject = "Your Conbyt discovery call link";
 
@@ -34,12 +41,7 @@ export async function sendBookingLinkEmail({
       </div>
     `;
 
-    const { error } = await resend.emails.send({
-      from: FROM_ADDRESS,
-      to,
-      subject,
-      html,
-    });
+    const { error } = await resend.emails.send({ from: FROM_ADDRESS, to, subject, html });
 
     if (error) {
       console.error("Resend send error:", error);
@@ -54,9 +56,5 @@ export async function sendBookingLinkEmail({
 }
 
 function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

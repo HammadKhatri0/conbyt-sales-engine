@@ -5,8 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { summarizeCall } from "@/lib/gemini";
 import { continueCampaign } from "@/lib/campaign-engine";
 import { sendBookingLinkEmail } from "@/lib/email";
-
-const BOOKING_URL = process.env.BOOKING_URL!;
+import { getSettings } from "@/lib/settings";
 
 function verifyRetellSignature(
   rawBody: string,
@@ -40,7 +39,14 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const signature = req.headers.get("x-retell-signature") ?? "";
 
-  const isValid = verifyRetellSignature(rawBody, process.env.RETELL_API_KEY!, signature);
+  const settings = await getSettings();
+
+  if (!settings.retellApiKey) {
+    console.error("Retell webhook: no API key configured in Settings");
+    return NextResponse.json({ error: "Not configured" }, { status: 500 });
+  }
+
+  const isValid = verifyRetellSignature(rawBody, settings.retellApiKey, signature);
 
   if (!isValid) {
     console.error("Retell webhook: invalid signature");
@@ -66,15 +72,12 @@ export async function POST(req: NextRequest) {
     switch (event) {
       case "call_started":
         break;
-
       case "call_ended":
         await handleCallEnded(call);
         break;
-
       case "call_analyzed":
         await handleCallAnalyzed(call);
         break;
-
       default:
         console.log(`Unhandled Retell event type: ${event}`);
     }
@@ -94,11 +97,6 @@ type LeadOutcome =
   | "NO_ANSWER"
   | "WRONG_NUMBER";
 
-/**
- * call_ended fires as soon as the call finishes — before Retell's analysis is ready.
- * We save what we have immediately, apply a rough fallback status, and move the
- * campaign along right away so timing doesn't wait on analysis latency.
- */
 async function handleCallEnded(call: any) {
   const lead = await prisma.lead.findUnique({
     where: { retellCallId: call.call_id },
@@ -140,21 +138,12 @@ async function handleCallEnded(call: any) {
     data: { status: fallbackOutcome },
   });
 
-  // Move the campaign forward now — don't wait for call_analyzed, which can lag.
   if (lead.campaignId) {
     await continueCampaign(lead.campaignId);
   }
 }
 
-/**
- * call_analyzed fires once Retell's post-call analysis finishes. This is where
- * the real outcome and all the extracted booking/qualification data lives.
- */
 async function handleCallAnalyzed(call: any) {
-  // Temporary: log raw payload to confirm custom_analysis_data key names.
-  // Works even without a matching Lead (e.g. dashboard web-call tests).
-  console.log("call_analyzed raw payload:", JSON.stringify(call.call_analysis, null, 2));
-
   const lead = await prisma.lead.findUnique({
     where: { retellCallId: call.call_id },
   });
@@ -229,23 +218,25 @@ async function handleCallAnalyzed(call: any) {
     data: { status: outcome },
   });
 
-  // If the prospect was interested but chose email follow-up over booking
-  // live on the call, send them the booking link now.
   if (outcome === "LINK_EMAILED" && analysisData.prospect_email) {
-    const emailResult = await sendBookingLinkEmail({
-      to: analysisData.prospect_email,
-      firstName: lead.name?.split(" ")[0] || "there",
-      companyName: lead.company ?? null,
-      bookingUrl: BOOKING_URL,
-    });
+    const settings = await getSettings();
 
-    if (!emailResult.success) {
-      console.error(
-        `Failed to send booking link email for lead ${lead.id} (call ${call.call_id}):`,
-        emailResult.error
-      );
-      // Not throwing — the call outcome itself is still valid even if the
-      // email failed to send. Consider a retry/alerting mechanism later.
+    if (!settings.bookingUrl) {
+      console.error("Cannot send booking link email: bookingUrl not set in Settings");
+    } else {
+      const emailResult = await sendBookingLinkEmail({
+        to: analysisData.prospect_email,
+        firstName: lead.name?.split(" ")[0] || "there",
+        companyName: lead.company ?? null,
+        bookingUrl: settings.bookingUrl,
+      });
+
+      if (!emailResult.success) {
+        console.error(
+          `Failed to send booking link email for lead ${lead.id} (call ${call.call_id}):`,
+          emailResult.error
+        );
+      }
     }
   }
 }
@@ -253,9 +244,6 @@ async function handleCallAnalyzed(call: any) {
 function mapDisconnectionReasonToStatus(reason: string | undefined): LeadOutcome {
   switch (reason) {
     case "voicemail_reached":
-      // Voicemail detection is off, so this shouldn't fire in practice.
-      // Falling back to NO_ANSWER rather than NOT_INTERESTED since no
-      // real conversation happened.
       return "NO_ANSWER";
     case "dial_no_answer":
     case "dial_busy":
