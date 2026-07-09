@@ -6,6 +6,7 @@ const LEAD_FIELDS = [
   { key: "phone", label: "Phone", required: true },
   { key: "company", label: "Company", required: false },
   { key: "industry", label: "Industry", required: false },
+  { key: "website", label: "Website", required: false },
   { key: "openerHook", label: "Opener Hook", required: false },
 ] as const;
 

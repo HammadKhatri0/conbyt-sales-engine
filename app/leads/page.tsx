@@ -12,10 +12,14 @@ interface Lead {
   phone: string;
   company: string | null;
   industry: string | null;
+  website: string | null;
   status: string;
+  enrichmentStatus: string;
+  finalScore: number | null;
 }
 
 const STATUS_OPTIONS = [
+  "NEW",
   "QUEUED",
   "CALLING",
   "BOOKED",
@@ -28,6 +32,7 @@ const STATUS_OPTIONS = [
 ];
 
 const STATUS_STYLES: Record<string, string> = {
+  NEW: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
   QUEUED: "bg-slate-500/15 text-slate-300 border-slate-500/30",
   CALLING: "bg-blue-500/15 text-blue-300 border-blue-500/30",
   BOOKED: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
@@ -37,6 +42,13 @@ const STATUS_STYLES: Record<string, string> = {
   NO_ANSWER: "bg-gray-500/15 text-gray-300 border-gray-500/30",
   WRONG_NUMBER: "bg-red-500/15 text-red-300 border-red-500/30",
   DO_NOT_CALL: "bg-red-700/15 text-red-400 border-red-700/30",
+};
+
+const ENRICHMENT_STYLES: Record<string, string> = {
+  PENDING: "bg-slate-500/15 text-slate-300",
+  ENRICHING: "bg-blue-500/15 text-blue-300 animate-pulse",
+  READY: "bg-emerald-500/15 text-emerald-300",
+  FAILED: "bg-red-500/15 text-red-300",
 };
 
 const PAGE_SIZE = 100;
@@ -49,11 +61,12 @@ export default function LeadsPage() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
+  const [showSheetsImport, setShowSheetsImport] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
-  const [showSheetsImport, setShowSheetsImport] = useState(false);
+  const [enriching, setEnriching] = useState(false);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -78,6 +91,22 @@ export default function LeadsPage() {
   useEffect(() => {
     setPage(1);
   }, [search, status]);
+
+  // Poll while any visible lead is actively enriching, so status updates
+  // without the user needing to manually refresh.
+  useEffect(() => {
+    const hasEnriching = leads.some((l) => l.enrichmentStatus === "ENRICHING");
+    if (!hasEnriching) return;
+    const interval = setInterval(fetchLeads, 3000);
+    return () => clearInterval(interval);
+  }, [leads, fetchLeads]);
+
+  function scoreBadgeColor(score: number | null): string {
+    if (score == null) return "bg-slate-500/15 text-slate-300";
+    if (score <= 4) return "bg-red-500/15 text-red-300";
+    if (score <= 6) return "bg-orange-500/15 text-orange-300";
+    return "bg-emerald-500/15 text-emerald-300";
+  }
 
   function toggleSelectMode() {
     setSelectMode((prev) => !prev);
@@ -123,7 +152,9 @@ export default function LeadsPage() {
           Phone: l.phone,
           Company: l.company ?? "",
           Industry: l.industry ?? "",
+          Website: l.website ?? "",
           Status: l.status,
+          Enrichment: l.enrichmentStatus,
         }))
       );
 
@@ -172,6 +203,33 @@ export default function LeadsPage() {
     }
   }
 
+  async function handleEnrichSelected() {
+    if (selectedIds.size === 0) return;
+
+    setEnriching(true);
+    try {
+      const res = await fetch("/api/leads/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadIds: Array.from(selectedIds) }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Failed to queue enrichment");
+        return;
+      }
+
+      setSelectedIds(new Set());
+      setSelectMode(false);
+      await fetchLeads();
+    } catch {
+      alert("Network error while queuing enrichment");
+    } finally {
+      setEnriching(false);
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const allOnPageSelected = leads.length > 0 && leads.every((l) => selectedIds.has(l.id));
 
@@ -182,21 +240,28 @@ export default function LeadsPage() {
           <h1 className="text-2xl font-semibold">Leads</h1>
           <p className="text-sm text-muted mt-1">{total} total</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
           {selectMode && selectedIds.size > 0 && (
-            <button
-              onClick={handleBulkDelete}
-              disabled={bulkDeleting}
-              className="bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 rounded-full px-4 py-2.5 text-sm font-medium disabled:opacity-40"
-            >
-              {bulkDeleting ? "Deleting…" : `Delete ${selectedIds.size} selected`}
-            </button>
+            <>
+              <button
+                onClick={handleEnrichSelected}
+                disabled={enriching}
+                className="bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 rounded-full px-4 py-2.5 text-sm font-medium disabled:opacity-40"
+              >
+                {enriching ? "Queuing…" : `Enrich ${selectedIds.size} selected`}
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 rounded-full px-4 py-2.5 text-sm font-medium disabled:opacity-40"
+              >
+                {bulkDeleting ? "Deleting…" : `Delete ${selectedIds.size} selected`}
+              </button>
+            </>
           )}
           <button
             onClick={toggleSelectMode}
-            className={`border text-sm rounded-full px-4 py-2.5 transition-colors ${selectMode
-              ? "border-white/30 bg-card"
-              : "border-border hover:border-white/30"
+            className={`border text-sm rounded-full px-4 py-2.5 transition-colors ${selectMode ? "border-white/30 bg-card" : "border-border hover:border-white/30"
               }`}
           >
             {selectMode ? "Cancel" : "Select"}
@@ -209,16 +274,16 @@ export default function LeadsPage() {
             {downloading ? "Preparing…" : `Download all (${total})`}
           </button>
           <button
-            onClick={() => setShowUpload(true)}
-            className="bg-linear-to-r from-accent to-accent-2 hover:opacity-90 text-white rounded-full px-5 py-2.5 text-sm font-medium shadow-lg shadow-accent/20"
-          >
-            Upload CSV
-          </button>
-          <button
             onClick={() => setShowSheetsImport(true)}
             className="border border-border hover:border-white/30 text-sm rounded-full px-4 py-2.5 transition-colors"
           >
             Import from Sheets
+          </button>
+          <button
+            onClick={() => setShowUpload(true)}
+            className="bg-linear-to-r from-accent to-accent-2 hover:opacity-90 text-white rounded-full px-5 py-2.5 text-sm font-medium shadow-lg shadow-accent/20"
+          >
+            Upload CSV
           </button>
         </div>
       </div>
@@ -251,30 +316,27 @@ export default function LeadsPage() {
             <tr>
               {selectMode && (
                 <th className="px-4 py-3 w-10">
-                  <input
-                    type="checkbox"
-                    checked={allOnPageSelected}
-                    onChange={toggleSelectAllOnPage}
-                    className="accent-accent"
-                  />
+                  <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="accent-accent" />
                 </th>
               )}
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Phone</th>
               <th className="px-4 py-3 font-medium">Company</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Enrichment</th>
+              <th className="px-4 py-3 font-medium">Score</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-muted">
+                <td colSpan={6} className="px-4 py-10 text-center text-muted">
                   Loading…
                 </td>
               </tr>
             ) : leads.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-muted">
+                <td colSpan={6} className="px-4 py-10 text-center text-muted">
                   No leads match your search
                 </td>
               </tr>
@@ -300,11 +362,18 @@ export default function LeadsPage() {
                   <td className="px-4 py-3 text-muted">{lead.phone}</td>
                   <td className="px-4 py-3 text-muted">{lead.company ?? "—"}</td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-medium border ${STATUS_STYLES[lead.status] ?? ""
-                        }`}
-                    >
+                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-medium border ${STATUS_STYLES[lead.status] ?? ""}`}>
                       {lead.status.replace(/_/g, " ")}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-medium ${ENRICHMENT_STYLES[lead.enrichmentStatus] ?? ""}`}>
+                      {lead.enrichmentStatus}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-medium ${scoreBadgeColor(lead.finalScore)}`}>
+                      {lead.finalScore != null ? lead.finalScore.toFixed(1) : "—"}
                     </span>
                   </td>
                 </tr>
@@ -338,14 +407,9 @@ export default function LeadsPage() {
         </div>
       )}
 
-      {showUpload && (
-        <CsvUploadDialog onClose={() => setShowUpload(false)} onSuccess={fetchLeads} />
-      )}
+      {showUpload && <CsvUploadDialog onClose={() => setShowUpload(false)} onSuccess={fetchLeads} />}
       {showSheetsImport && (
-        <GoogleSheetsImportDialog
-          onClose={() => setShowSheetsImport(false)}
-          onSuccess={fetchLeads}
-        />
+        <GoogleSheetsImportDialog onClose={() => setShowSheetsImport(false)} onSuccess={fetchLeads} />
       )}
     </div>
   );

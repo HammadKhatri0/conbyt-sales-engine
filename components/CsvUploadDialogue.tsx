@@ -21,6 +21,7 @@ export default function CsvUploadDialog({ onClose, onSuccess }: CsvUploadDialogP
     phone: "",
     company: "",
     industry: "",
+    website: "",
     openerHook: "",
   });
   const [errorMsg, setErrorMsg] = useState("");
@@ -50,6 +51,7 @@ export default function CsvUploadDialog({ onClose, onSuccess }: CsvUploadDialogP
           phone: "",
           company: "",
           industry: "",
+          website: "",
           openerHook: "",
         };
         for (const field of LEAD_FIELDS) {
@@ -57,6 +59,9 @@ export default function CsvUploadDialog({ onClose, onSuccess }: CsvUploadDialogP
             const lower = h.toLowerCase();
             if (field.key === "openerHook") {
               return lower.includes("opener") || lower.includes("hook") || lower.includes("note");
+            }
+            if (field.key === "website") {
+              return lower.includes("website") || lower.includes("domain") || lower.includes("url");
             }
             return lower.includes(field.key.toLowerCase());
           });
@@ -86,6 +91,7 @@ export default function CsvUploadDialog({ onClose, onSuccess }: CsvUploadDialogP
       phone: row[mapping.phone] ?? "",
       company: mapping.company ? row[mapping.company] : undefined,
       industry: mapping.industry ? row[mapping.industry] : undefined,
+      website: mapping.website ? row[mapping.website] : undefined,
       openerHook: mapping.openerHook ? row[mapping.openerHook] : undefined,
     }));
 

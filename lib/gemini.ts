@@ -1,6 +1,7 @@
 // lib/gemini.ts
 import { GoogleGenAI } from "@google/genai";
 import { getSettings } from "@/lib/settings";
+import { withRetry } from "@/lib/retry";
 
 const MODEL = "gemini-2.5-flash-lite";
 
@@ -23,10 +24,12 @@ Transcript:
 ${transcript}
 """`;
 
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: prompt,
-  });
+  const response = await withRetry(() =>
+    ai.models.generateContent({
+      model: MODEL,
+      contents: prompt,
+    })
+  );
 
   return (response.text ?? "").trim();
 }

@@ -8,6 +8,7 @@ datasource db {
 }
 
 enum LeadStatus {
+  NEW
   QUEUED
   CALLING
   BOOKED
@@ -17,6 +18,21 @@ enum LeadStatus {
   NO_ANSWER
   WRONG_NUMBER
   DO_NOT_CALL
+}
+
+enum LeadSource {
+  MANUAL
+  CSV
+  SHEETS
+  HOMEPAGE
+  APOLLO
+}
+
+enum EnrichmentStatus {
+  PENDING
+  ENRICHING
+  READY
+  FAILED
 }
 
 enum CampaignStatus {
@@ -30,17 +46,50 @@ model Lead {
   id             String   @id @default(cuid())
   name           String
   phone          String   @unique
+  email          String?
   company        String?
   industry       String?
   openerHook     String?  @map("opener_hook")
   status         LeadStatus @default(QUEUED)
+  source         LeadSource @default(MANUAL)
   retellCallId   String?  @unique @map("retell_call_id")
   timezone       String?
+  finalScore          Float?   @map("final_score")
+  structuredScore      Float?   @map("structured_score")
+  naturalLanguageScore Float?   @map("natural_language_score")
+  scoreBreakdown       Json?    @map("score_breakdown")
+  scoredAt            DateTime? @map("scored_at")
+
+  // Apollo import fields
+  apolloId       String?  @unique @map("apollo_id")
+  employeeCount  Int?     @map("employee_count")
+  location       String?
+  jobTitle       String?  @map("job_title")
+  seniorityLevel String?  @map("seniority_level")
+  enrichmentStatus EnrichmentStatus @default(PENDING) @map("enrichment_status")
+
   campaignId     String?  @map("campaign_id")
   campaign       Campaign? @relation(fields: [campaignId], references: [id])
+  icpProfileId   String?  @map("icp_profile_id")
+  icpProfile     ICPProfile? @relation(fields: [icpProfileId], references: [id])
   callAttempts   CallAttempt[]
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
+
+  website              String?  // company domain, pulled from Apollo's organization.website_url if available
+
+  // Enrichment results
+  websiteSummary       Json?    @map("website_summary")
+  techStackDetected     String[] @map("tech_stack_detected")
+  newsSummary          Json?    @map("news_summary")
+  enrichedAt           DateTime? @map("enriched_at")
+
+  // Reserved for future LinkedIn enrichment — NOT populated by any code yet.
+  // Left in the schema so a future vendor integration doesn't need another
+  // migration, but these will be null on every lead until that's built.
+  linkedinProfile      Json?    @map("linkedin_profile")
+  recentPosts          Json?    @map("recent_posts")
+  companyLinkedin       Json?    @map("company_linkedin")
 
   @@map("leads")
 }
@@ -150,4 +199,65 @@ model Settings {
   updatedAt             DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
+}
+// One profile can be marked active at a time (enforced in app logic — the
+// activate endpoint flips every other profile's isActive to false).
+model ICPProfile {
+  id       String  @id @default(cuid())
+  name     String
+  isActive Boolean @default(false) @map("is_active")
+
+  // Structured filters
+  targetIndustries     String[] @map("target_industries")
+  employeeCountMin     Int?     @map("employee_count_min")
+  employeeCountMax     Int?     @map("employee_count_max")
+  geographyCountry     String?  @map("geography_country")
+  geographyRegion      String?  @map("geography_region")
+  targetJobTitles      String[] @map("target_job_titles")
+  excludeJobTitles     String[] @map("exclude_job_titles")
+  positiveSignals      String[] @map("positive_signals")
+  negativeSignals      String[] @map("negative_signals")
+  linkedinPostKeywords String[] @map("linkedin_post_keywords")
+  websiteKeywords      String[] @map("website_keywords")
+  minScoreThreshold    Float    @default(7) @map("min_score_threshold")
+  competitorTools      String[] @map("competitor_tools")
+
+  // Natural language fields
+  idealCustomerDescription     String? @db.Text @map("ideal_customer_description")
+  linkedinPresenceDescription  String? @db.Text @map("linkedin_presence_description")
+  badFitDescription            String? @db.Text @map("bad_fit_description")
+  immediateCallTrigger         String? @db.Text @map("immediate_call_trigger")
+
+  leads Lead[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("icp_profiles")
+}
+
+// Global reusable proof-point library — not scoped to a single ICP profile.
+// AI picks the most relevant one per lead when generating briefs/emails.
+model ProofPoint {
+  id          String @id @default(cuid())
+  name        String
+  metric      String
+  description String @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("proof_points")
+}
+
+// Global services library, used by AI to pick the right pitch per lead.
+model Service {
+  id          String @id @default(cuid())
+  name        String
+  description String @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("services")
 }

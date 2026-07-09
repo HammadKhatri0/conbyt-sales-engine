@@ -7,6 +7,7 @@ interface IncomingLead {
   phone: string;
   company?: string;
   industry?: string;
+  website?: string;
   openerHook?: string;
 }
 
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
           phone,
           company: row.company?.trim() || null,
           industry: row.industry?.trim() || null,
+          website: row.website?.trim() || null,
           openerHook: row.openerHook?.trim() || null,
           status: "QUEUED",
         },

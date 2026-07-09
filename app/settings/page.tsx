@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 interface SettingsData {
     [key: string]: any;
@@ -89,7 +90,12 @@ export default function SettingsPage() {
     return (
         <div className="max-w-3xl mx-auto px-6 py-10">
             <div className="flex items-center justify-between mb-6">
-                <h1 className="text-2xl font-semibold">Settings</h1>
+                <div>
+                    <h1 className="text-2xl font-semibold">Settings</h1>
+                    <Link href="/settings/icp" className="text-xs text-accent hover:underline mt-1 inline-block">
+                        Manage ICP Settings →
+                    </Link>
+                </div>
                 <button
                     onClick={handleSave}
                     disabled={saving}
