@@ -20,6 +20,11 @@ interface ActiveCampaign {
   totalLeads: number;
   queuedCount: number;
   calledCount: number;
+  emailBeforeCall: boolean;
+  emailWaitHours: number;
+  emailedCount: number;
+  awaitingEmailCount: number;
+  awaitingWaitCount: number;
   currentLead: { id: string; name: string; phone: string } | null;
 }
 
@@ -32,15 +37,17 @@ export default function QueuePage() {
   const [starting, setStarting] = useState(false);
   const [activeCampaign, setActiveCampaign] = useState<ActiveCampaign | null>(null);
   const [pauseResumeLoading, setPauseResumeLoading] = useState(false);
+  const [filteredOutCount, setFilteredOutCount] = useState(0);
 
   const fetchQueue = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ status: "QUEUED", page: "1" });
+      const params = new URLSearchParams({ status: "QUEUED", page: "1", excludeBelowThreshold: "true", excludeSuppressed: "true" });
       const res = await fetch(`/api/leads?${params}`);
       const data = await res.json();
       setLeads(data.leads ?? []);
       setTotal(data.total ?? 0);
+      setFilteredOutCount(data.filteredOutCount ?? 0);
     } finally {
       setLoading(false);
     }
@@ -89,12 +96,22 @@ export default function QueuePage() {
     const name = window.prompt("Name this campaign:", `Campaign ${new Date().toLocaleDateString()}`);
     if (!name) return;
 
+    const emailBeforeCall = window.confirm(
+      "Send an AI-generated email first, then call leads who haven't converted after a wait period?\n\n" +
+      "OK = email → wait → call. Cancel = call-only (as before)."
+    );
+    let emailWaitHours = 48;
+    if (emailBeforeCall) {
+      const hoursStr = window.prompt("Wait how many hours after the email before calling?", "48");
+      if (hoursStr && !isNaN(Number(hoursStr))) emailWaitHours = Number(hoursStr);
+    }
+
     setStarting(true);
     try {
       const createRes = await fetch("/api/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, leadIds: Array.from(selectedIds) }),
+        body: JSON.stringify({ name, leadIds: Array.from(selectedIds), emailBeforeCall, emailWaitHours }),
       });
       const createData = await createRes.json();
 
@@ -155,6 +172,11 @@ export default function QueuePage() {
           <p className="text-sm text-muted mt-1">
             {total} lead{total !== 1 ? "s" : ""} waiting to be called
           </p>
+          {filteredOutCount > 0 && (
+            <p className="text-xs text-amber-400/80 mt-1">
+              {filteredOutCount} lead{filteredOutCount !== 1 ? "s" : ""} hidden — scored below your ICP's minimum threshold
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {selectMode && selectedIds.size > 0 && (
@@ -169,9 +191,8 @@ export default function QueuePage() {
           <button
             onClick={toggleSelectMode}
             disabled={!!activeCampaign}
-            className={`border text-sm rounded-full px-4 py-2.5 transition-colors disabled:opacity-40 ${
-              selectMode ? "border-white/30 bg-card" : "border-border hover:border-white/30"
-            }`}
+            className={`border text-sm rounded-full px-4 py-2.5 transition-colors disabled:opacity-40 ${selectMode ? "border-white/30 bg-card" : "border-border hover:border-white/30"
+              }`}
           >
             {selectMode ? "Cancel" : "Select"}
           </button>
@@ -190,9 +211,8 @@ export default function QueuePage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span
-                className={`w-2 h-2 rounded-full ${
-                  activeCampaign.status === "RUNNING" ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
-                }`}
+                className={`w-2 h-2 rounded-full ${activeCampaign.status === "RUNNING" ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                  }`}
               />
               <p className="font-medium text-sm">{activeCampaign.name}</p>
               <span className="text-xs text-muted">
@@ -205,6 +225,13 @@ export default function QueuePage() {
                 <> · currently calling {activeCampaign.currentLead.name} ({activeCampaign.currentLead.phone})</>
               )}
             </p>
+            {activeCampaign.emailBeforeCall && (
+              <p className="text-xs text-purple-300 mt-1">
+                Email → wait {activeCampaign.emailWaitHours}h → call · {activeCampaign.emailedCount} emailed
+                {activeCampaign.awaitingEmailCount > 0 && <>, {activeCampaign.awaitingEmailCount} awaiting email</>}
+                {activeCampaign.awaitingWaitCount > 0 && <>, {activeCampaign.awaitingWaitCount} in wait window</>}
+              </p>
+            )}
           </div>
           <button
             onClick={activeCampaign.status === "RUNNING" ? handlePause : handleResume}
@@ -214,8 +241,8 @@ export default function QueuePage() {
             {pauseResumeLoading
               ? "…"
               : activeCampaign.status === "RUNNING"
-              ? "Pause"
-              : "Resume"}
+                ? "Pause"
+                : "Resume"}
           </button>
         </div>
       )}
@@ -254,9 +281,8 @@ export default function QueuePage() {
                 <tr
                   key={lead.id}
                   onClick={() => selectMode && toggleSelect(lead.id)}
-                  className={`border-t border-border hover:bg-card/40 ${
-                    selectedIds.has(lead.id) ? "bg-accent/5" : ""
-                  } ${selectMode ? "cursor-pointer" : ""}`}
+                  className={`border-t border-border hover:bg-card/40 ${selectedIds.has(lead.id) ? "bg-accent/5" : ""
+                    } ${selectMode ? "cursor-pointer" : ""}`}
                 >
                   {selectMode && (
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>

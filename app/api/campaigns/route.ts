@@ -4,14 +4,18 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, leadIds } = await req.json();
+    const { name, leadIds, emailBeforeCall, emailWaitHours } = await req.json();
 
     if (!name || !Array.isArray(leadIds) || leadIds.length === 0) {
       return NextResponse.json({ error: "Name and at least one lead ID are required" }, { status: 400 });
     }
 
     const campaign = await prisma.campaign.create({
-      data: { name, status: "DRAFT" },
+      data: {
+        name,
+        status: "DRAFT",
+        ...(emailBeforeCall ? { emailBeforeCall: true, emailWaitHours: emailWaitHours || 48 } : {}),
+      },
     });
 
     await prisma.lead.updateMany({

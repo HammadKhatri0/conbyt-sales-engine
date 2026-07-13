@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveICPProfile } from "@/lib/icp";
 import { computeStructuredScore, type ScoreLine } from "./structured";
 import { computeNaturalLanguageScore } from "./natural-language";
+import { briefQueue } from "@/lib/queues";
 
 const NATURAL_LANGUAGE_THRESHOLD = 4; // per spec: only run NL scoring for leads scoring 4+ on structured
 
@@ -60,4 +61,8 @@ export async function scoreLead(leadId: string): Promise<void> {
       scoredAt: new Date(),
     },
   });
+
+  if (finalScore >= icp.minScoreThreshold) {
+    await briefQueue.add("generate-brief", { leadId });
+  }
 }

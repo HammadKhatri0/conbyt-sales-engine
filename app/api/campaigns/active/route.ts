@@ -9,7 +9,7 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
       include: {
         leads: {
-          select: { id: true, status: true },
+          select: { id: true, status: true, emailSentAt: true },
         },
       },
     });
@@ -25,6 +25,13 @@ export async function GET() {
     const queuedCount = campaign.leads.filter((l) => l.status === "QUEUED").length;
     const calledCount = campaign.leads.filter((l) => l.status !== "QUEUED").length;
 
+    const waitCutoff = new Date(Date.now() - campaign.emailWaitHours * 60 * 60 * 1000);
+    const awaitingEmailCount = campaign.leads.filter((l) => l.status === "QUEUED" && !l.emailSentAt).length;
+    const awaitingWaitCount = campaign.leads.filter(
+      (l) => l.status === "QUEUED" && l.emailSentAt && l.emailSentAt > waitCutoff
+    ).length;
+    const emailedCount = campaign.leads.filter((l) => l.emailSentAt).length;
+
     return NextResponse.json({
       campaign: {
         id: campaign.id,
@@ -33,6 +40,11 @@ export async function GET() {
         totalLeads: campaign.leads.length,
         queuedCount,
         calledCount,
+        emailBeforeCall: campaign.emailBeforeCall,
+        emailWaitHours: campaign.emailWaitHours,
+        emailedCount,
+        awaitingEmailCount,
+        awaitingWaitCount,
         currentLead: currentLead
           ? { id: currentLead.id, name: currentLead.name, phone: currentLead.phone }
           : null,

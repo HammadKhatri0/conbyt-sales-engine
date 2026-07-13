@@ -33,7 +33,11 @@ export async function placeCallForLead(leadId: string): Promise<{ success: boole
         first_name: lead.name.split(" ")[0],
         company_name: lead.company ?? "",
         industry: lead.industry ?? "",
-        opener_hook: lead.openerHook ?? "",
+        opener_hook: lead.briefOpenerHook || lead.openerHook || "",
+        pain_assumption: lead.briefPainAssumption ?? "",
+        relevant_proof_point: lead.briefProofPoint ?? "",
+        personalised_pitch: lead.briefPersonalizedPitch ?? "",
+        company_size_response: lead.employeeCount ? String(lead.employeeCount) : "",
       },
     });
 

@@ -59,6 +59,21 @@ model Lead {
   naturalLanguageScore Float?   @map("natural_language_score")
   scoreBreakdown       Json?    @map("score_breakdown")
   scoredAt            DateTime? @map("scored_at")
+  notes         String?  @db.Text
+  isSuppressed  Boolean  @default(false) @map("is_suppressed")
+  callbackAt    DateTime? @map("callback_at")
+  retryCount    Int      @default(0) @map("retry_count")
+  retryAt       DateTime? @map("retry_at")
+  emailSubject       String?   @db.Text @map("email_subject")
+  emailBody          String?   @db.Text @map("email_body")
+  emailGeneratedAt   DateTime? @map("email_generated_at")
+  emailSentAt        DateTime? @map("email_sent_at")
+  briefOpenerHook       String?  @db.Text @map("brief_opener_hook")
+  briefPainAssumption   String?  @db.Text @map("brief_pain_assumption")
+  briefProofPoint       String?  @db.Text @map("brief_proof_point")
+  briefPersonalizedPitch String? @db.Text @map("brief_personalized_pitch")
+  briefGeneratedAt      DateTime? @map("brief_generated_at")
+
 
   // Apollo import fields
   apolloId       String?  @unique @map("apollo_id")
@@ -132,6 +147,8 @@ model Campaign {
   gapSeconds    Int      @default(30) @map("gap_seconds")
   callStartHour Int      @default(9) @map("call_start_hour")
   callEndHour   Int      @default(18) @map("call_end_hour")
+  emailBeforeCall Boolean @default(false) @map("email_before_call")
+  emailWaitHours  Int     @default(48) @map("email_wait_hours")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -168,11 +185,14 @@ model Settings {
   twilioAuthToken       String?  @map("twilio_auth_token")
   twilioFromNumber      String?  @map("twilio_from_number")
 
-  // Calendly
-  calendlyAccessToken   String?  @map("calendly_access_token")
-  calendlyEventTypeUri  String?  @map("calendly_event_type_uri")
+  // Cal
+  calcomApiKey     String?  @map("calcom_api_key")
+  calcomEventTypeId Int?    @map("calcom_event_type_id")
+  calcomWebhookSecret String? @map("calcom_webhook_secret")
 
   // Gmail
+  gmailClientId         String?  @map("gmail_client_id")
+  gmailClientSecret     String?  @map("gmail_client_secret")
   gmailConnected        Boolean  @default(false) @map("gmail_connected")
   gmailRefreshToken     String?  @map("gmail_refresh_token")
   gmailEmailAddress     String?  @map("gmail_email_address")

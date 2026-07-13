@@ -1,10 +1,12 @@
 // app/leads/page.tsx
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Papa from "papaparse";
 import CsvUploadDialog from "@/components/CsvUploadDialogue";
 import GoogleSheetsImportDialog from "@/components/GoogleSheetsImportDialog";
+import GoogleSheetsExportDialog from "@/components/GoogleSheetsExportDialog";
+import Link from "next/link";
 
 interface Lead {
   id: string;
@@ -53,6 +55,55 @@ const ENRICHMENT_STYLES: Record<string, string> = {
 
 const PAGE_SIZE = 100;
 
+function ExportMenu({
+  label,
+  disabled,
+  options,
+}: {
+  label: string;
+  disabled?: boolean;
+  options: { label: string; onClick: () => void }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        disabled={disabled}
+        className="border border-border hover:border-white/30 text-sm rounded-full px-4 py-2.5 disabled:opacity-40 transition-colors flex items-center gap-1.5"
+      >
+        {label} <span className="text-xs">▾</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-xl shadow-lg py-1.5 z-20">
+          {options.map((opt) => (
+            <button
+              key={opt.label}
+              onClick={() => {
+                opt.onClick();
+                setOpen(false);
+              }}
+              className="w-full text-left px-4 py-2 text-sm hover:bg-background transition-colors"
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
@@ -67,6 +118,8 @@ export default function LeadsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [enriching, setEnriching] = useState(false);
+  const [preparingExport, setPreparingExport] = useState(false);
+  const [exportLeadIds, setExportLeadIds] = useState<string[] | null>(null);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -170,6 +223,32 @@ export default function LeadsPage() {
     }
   }
 
+  async function handleExportAll() {
+    setPreparingExport(true);
+    try {
+      const params = new URLSearchParams({ all: "true" });
+      if (search) params.set("search", search);
+      if (status) params.set("status", status);
+
+      const res = await fetch(`/api/leads?${params}`);
+      const data = await res.json();
+      const ids: string[] = (data.leads ?? []).map((l: Lead) => l.id);
+
+      if (ids.length === 0) {
+        alert("No leads match your current search/filter");
+        return;
+      }
+      setExportLeadIds(ids);
+    } finally {
+      setPreparingExport(false);
+    }
+  }
+
+  function handleExportSelected() {
+    if (selectedIds.size === 0) return;
+    setExportLeadIds(Array.from(selectedIds));
+  }
+
   async function handleBulkDelete() {
     if (selectedIds.size === 0) return;
 
@@ -251,6 +330,12 @@ export default function LeadsPage() {
                 {enriching ? "Queuing…" : `Enrich ${selectedIds.size} selected`}
               </button>
               <button
+                onClick={handleExportSelected}
+                className="border border-border hover:border-white/30 text-sm rounded-full px-4 py-2.5 transition-colors"
+              >
+                {`Export ${selectedIds.size} to Sheets`}
+              </button>
+              <button
                 onClick={handleBulkDelete}
                 disabled={bulkDeleting}
                 className="bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 rounded-full px-4 py-2.5 text-sm font-medium disabled:opacity-40"
@@ -267,18 +352,25 @@ export default function LeadsPage() {
             {selectMode ? "Cancel" : "Select"}
           </button>
           <button
-            onClick={handleDownloadAll}
-            disabled={downloading || total === 0}
-            className="border border-border hover:border-white/30 text-sm rounded-full px-4 py-2.5 disabled:opacity-40 transition-colors"
-          >
-            {downloading ? "Preparing…" : `Download all (${total})`}
-          </button>
-          <button
             onClick={() => setShowSheetsImport(true)}
             className="border border-border hover:border-white/30 text-sm rounded-full px-4 py-2.5 transition-colors"
           >
             Import from Sheets
           </button>
+          <ExportMenu
+            label={downloading || preparingExport ? "Preparing…" : "Export"}
+            disabled={downloading || preparingExport || total === 0}
+            options={[
+              { label: `Download all (${total}) as CSV`, onClick: handleDownloadAll },
+              { label: "Export to Google Sheets", onClick: handleExportAll },
+            ]}
+          />
+          <Link
+            href="/leads/import"
+            className="border border-border hover:border-white/30 text-sm rounded-full px-4 py-2.5 transition-colors flex items-center"
+          >
+            Import from Apollo
+          </Link>
           <button
             onClick={() => setShowUpload(true)}
             className="bg-linear-to-r from-accent to-accent-2 hover:opacity-90 text-white rounded-full px-5 py-2.5 text-sm font-medium shadow-lg shadow-accent/20"
@@ -358,7 +450,15 @@ export default function LeadsPage() {
                       />
                     </td>
                   )}
-                  <td className="px-4 py-3">{lead.name}</td>
+                  <td className="px-4 py-3">
+                    {selectMode ? (
+                      lead.name
+                    ) : (
+                      <Link href={`/leads/${lead.id}`} className="hover:text-accent hover:underline" onClick={(e) => e.stopPropagation()}>
+                        {lead.name}
+                      </Link>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-muted">{lead.phone}</td>
                   <td className="px-4 py-3 text-muted">{lead.company ?? "—"}</td>
                   <td className="px-4 py-3">
@@ -410,6 +510,9 @@ export default function LeadsPage() {
       {showUpload && <CsvUploadDialog onClose={() => setShowUpload(false)} onSuccess={fetchLeads} />}
       {showSheetsImport && (
         <GoogleSheetsImportDialog onClose={() => setShowSheetsImport(false)} onSuccess={fetchLeads} />
+      )}
+      {exportLeadIds && (
+        <GoogleSheetsExportDialog leadIds={exportLeadIds} onClose={() => setExportLeadIds(null)} />
       )}
     </div>
   );

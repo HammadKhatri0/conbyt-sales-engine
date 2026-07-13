@@ -1,18 +1,11 @@
 // app/api/settings/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, updateSettings } from "@/lib/settings";
+import { getSettings, updateSettings, SENSITIVE_SETTINGS_FIELDS } from "@/lib/settings";
 
 // Fields that should never be sent back to the client in full once saved —
 // masked to avoid re-displaying secrets in the UI after page reloads.
-const SENSITIVE_FIELDS = [
-  "retellApiKey",
-  "apolloApiKey",
-  "proxycurlApiKey",
-  "openaiApiKey",
-  "twilioAuthToken",
-  "calendlyAccessToken",
-  "gmailRefreshToken",
-];
+// (Same list used to decide what gets encrypted at rest — see lib/settings.ts)
+const SENSITIVE_FIELDS = SENSITIVE_SETTINGS_FIELDS;
 
 function maskSecret(value: string | null): string {
   if (!value) return "";

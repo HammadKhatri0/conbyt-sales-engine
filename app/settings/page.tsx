@@ -51,18 +51,69 @@ export default function SettingsPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [savedMessage, setSavedMessage] = useState("");
+    const [gmailNotice, setGmailNotice] = useState<{ type: "connected" | "error"; message: string } | null>(null);
+    const [disconnectingGmail, setDisconnectingGmail] = useState(false);
 
-    useEffect(() => {
-        fetch("/api/settings")
+    function loadSettings() {
+        return fetch("/api/settings")
             .then((res) => res.json())
             .then((data) => {
                 setSettings(data.settings ?? {});
                 setLoading(false);
             });
+    }
+
+    useEffect(() => {
+        loadSettings();
+
+        // Read the ?gmail=connected|error redirect from the OAuth callback —
+        // parsed client-side (not useSearchParams) so this page can stay static.
+        const params = new URLSearchParams(window.location.search);
+        const gmail = params.get("gmail");
+        if (gmail === "connected") {
+            const email = params.get("email");
+            setGmailNotice({ type: "connected", message: email ? `Connected as ${email}` : "Gmail connected" });
+        } else if (gmail === "error") {
+            setGmailNotice({ type: "error", message: params.get("message") || "Failed to connect Gmail" });
+        }
+        if (gmail) {
+            window.history.replaceState({}, "", window.location.pathname);
+        }
     }, []);
 
+    async function handleDisconnectGmail() {
+        if (!window.confirm("Disconnect Gmail? Outbound email sending will stop until reconnected.")) return;
+        setDisconnectingGmail(true);
+        try {
+            const res = await fetch("/api/settings/gmail/disconnect", { method: "POST" });
+            if (res.ok) {
+                await loadSettings();
+                setGmailNotice(null);
+            } else {
+                alert("Failed to disconnect Gmail");
+            }
+        } finally {
+            setDisconnectingGmail(false);
+        }
+    }
+
+    const NUMERIC_FIELDS = new Set([
+        "calcomEventTypeId",
+        "callStartHour",
+        "callEndHour",
+        "callsPerHourLimit",
+        "callGapSeconds",
+        "maxRetryAttempts",
+        "voicemailOnAttempt",
+        "maxEmailsPerDay",
+        "emailSendStartHour",
+        "emailSendEndHour",
+        "emailGapSeconds",
+    ]);
+
     function update(name: string, value: string) {
-        setSettings((prev) => ({ ...prev, [name]: value }));
+        const converted = NUMERIC_FIELDS.has(name) && value !== "" ? Number(value) : value;
+        setSettings((prev) => ({ ...prev, [name]: converted }));
     }
 
     async function handleSave() {
@@ -77,6 +128,9 @@ export default function SettingsPage() {
             if (res.ok) {
                 setSavedMessage("Saved");
                 setTimeout(() => setSavedMessage(""), 2000);
+            } else {
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || "Failed to save settings — check the server logs.");
             }
         } finally {
             setSaving(false);
@@ -130,10 +184,56 @@ export default function SettingsPage() {
                 <Field label="From Number" name="twilioFromNumber" value={settings.twilioFromNumber} onChange={update} placeholder="+1..." />
             </Section>
 
-            <Section title="Calendly">
-                <Field label="Access Token" name="calendlyAccessToken" value={settings.calendlyAccessToken} onChange={update} type="password" />
-                <Field label="Event Type URI" name="calendlyEventTypeUri" value={settings.calendlyEventTypeUri} onChange={update} />
+            <Section title="Cal.com">
+                <Field label="API Key" name="calcomApiKey" value={settings.calcomApiKey} onChange={update} type="password" />
+                <Field label="Event Type ID" name="calcomEventTypeId" value={settings.calcomEventTypeId} onChange={update} type="number" />
+                <Field label="Webhook Secret" name="calcomWebhookSecret" value={settings.calcomWebhookSecret} onChange={update} type="password" />
             </Section>
+
+            <Section title="Gmail">
+                <Field label="OAuth Client ID" name="gmailClientId" value={settings.gmailClientId} onChange={update} />
+                <Field label="OAuth Client Secret" name="gmailClientSecret" value={settings.gmailClientSecret} onChange={update} type="password" />
+            </Section>
+
+            <div className="bg-card border border-border rounded-2xl p-6 mb-6">
+                <h2 className="text-sm font-semibold mb-4 text-muted uppercase tracking-wide">Gmail Connection</h2>
+
+                {gmailNotice && (
+                    <div
+                        className={`text-xs rounded-lg px-3 py-2 mb-4 ${gmailNotice.type === "connected"
+                            ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+                            : "bg-red-500/10 text-red-300 border border-red-500/20"
+                            }`}
+                    >
+                        {gmailNotice.message}
+                    </div>
+                )}
+
+                {settings.gmailConnected ? (
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm">
+                            Connected as <span className="font-medium">{settings.gmailEmailAddress}</span>
+                        </p>
+                        <button
+                            onClick={handleDisconnectGmail}
+                            disabled={disconnectingGmail}
+                            className="border border-red-500/30 text-red-300 hover:bg-red-500/10 text-xs rounded-full px-3 py-1.5 disabled:opacity-40"
+                        >
+                            {disconnectingGmail ? "Disconnecting…" : "Disconnect"}
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm text-muted">Not connected — save a Client ID/Secret above first.</p>
+                        <a
+                            href="/api/auth/gmail/connect"
+                            className="bg-linear-to-r from-accent to-accent-2 hover:opacity-90 text-white rounded-full px-4 py-2 text-xs font-medium"
+                        >
+                            Connect Gmail
+                        </a>
+                    </div>
+                )}
+            </div>
 
             <Section title="Calling Rules">
                 <Field label="Start Hour (0-23)" name="callStartHour" value={settings.callStartHour} onChange={update} type="number" />

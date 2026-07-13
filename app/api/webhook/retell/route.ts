@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { summarizeCall } from "@/lib/gemini";
-import { continueCampaign } from "@/lib/campaign-engine";
+import { continueCampaign, RETRY_GAP_MS } from "@/lib/campaign-engine";
 import { sendBookingLinkEmail } from "@/lib/email";
 import { getSettings } from "@/lib/settings";
 
@@ -213,14 +213,42 @@ async function handleCallAnalyzed(call: any) {
     },
   });
 
+  const settings = await getSettings();
+  let leadUpdateData: Record<string, any> = { status: outcome };
+
+  if (outcome === "NOT_INTERESTED") {
+    // Never dial this number again, in this campaign or any future one.
+    leadUpdateData.isSuppressed = true;
+  } else if (outcome === "WRONG_NUMBER") {
+    // Take it out of the campaign so the dialer's campaignId-scoped query
+    // stops considering it — distinct from suppression, which is reserved
+    // for confirmed not-interested/do-not-call leads.
+    leadUpdateData.campaignId = null;
+  } else if (outcome === "NO_ANSWER") {
+    const maxAttempts = settings.maxRetryAttempts ?? 3;
+    const nextRetryCount = lead.retryCount + 1;
+
+    if (nextRetryCount < maxAttempts) {
+      // Re-enter the dial queue instead of sitting terminal; dialNextLead's
+      // retryAt filter keeps it from being called again before the gap.
+      leadUpdateData = {
+        status: "QUEUED",
+        retryCount: nextRetryCount,
+        retryAt: new Date(Date.now() + RETRY_GAP_MS),
+      };
+    } else {
+      // Attempts exhausted — leave status NO_ANSWER as terminal.
+      leadUpdateData.retryCount = nextRetryCount;
+      leadUpdateData.retryAt = null;
+    }
+  }
+
   await prisma.lead.update({
     where: { id: lead.id },
-    data: { status: outcome },
+    data: leadUpdateData,
   });
 
   if (outcome === "LINK_EMAILED" && analysisData.prospect_email) {
-    const settings = await getSettings();
-
     if (!settings.bookingUrl) {
       console.error("Cannot send booking link email: bookingUrl not set in Settings");
     } else {

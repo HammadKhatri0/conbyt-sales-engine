@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "worker": "tsx watch workers/index.ts"
+    "worker": "tsx watch workers/index.ts",
+    "settings:seed": "tsx scripts/seed-settings-from-env.ts",
+    "settings:encrypt": "tsx scripts/encrypt-existing-settings.ts"
   },
   "overrides": {
     "ioredis": "^5.11.1"
