@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { summarizeCall } from "@/lib/gemini";
 import { continueCampaign, RETRY_GAP_MS } from "@/lib/campaign-engine";
 import { sendBookingLinkEmail } from "@/lib/email";
+import { sendVoicemailFollowUpSms } from "@/lib/sms";
 import { getSettings } from "@/lib/settings";
 
 function verifyRetellSignature(
@@ -215,6 +216,7 @@ async function handleCallAnalyzed(call: any) {
 
   const settings = await getSettings();
   let leadUpdateData: Record<string, any> = { status: outcome };
+  let sendSmsFollowUp = false;
 
   if (outcome === "NOT_INTERESTED") {
     // Never dial this number again, in this campaign or any future one.
@@ -237,9 +239,13 @@ async function handleCallAnalyzed(call: any) {
         retryAt: new Date(Date.now() + RETRY_GAP_MS),
       };
     } else {
-      // Attempts exhausted — leave status NO_ANSWER as terminal.
+      // Attempts exhausted — leave status NO_ANSWER as terminal, then try an
+      // SMS follow-up as a last-resort touch (no-op today: Twilio isn't
+      // configured until the client buys a number — sendSms() fails
+      // gracefully and this whole branch becomes live the moment it is).
       leadUpdateData.retryCount = nextRetryCount;
       leadUpdateData.retryAt = null;
+      if (!lead.smsSentAt) sendSmsFollowUp = true;
     }
   }
 
@@ -247,6 +253,22 @@ async function handleCallAnalyzed(call: any) {
     where: { id: lead.id },
     data: leadUpdateData,
   });
+
+  if (sendSmsFollowUp) {
+    const smsResult = await sendVoicemailFollowUpSms({
+      to: lead.phone,
+      firstName: lead.name?.split(" ")[0] || "there",
+      bookingUrl: settings.bookingUrl ?? null,
+    });
+
+    if (smsResult.success) {
+      await prisma.lead.update({ where: { id: lead.id }, data: { smsSentAt: new Date() } });
+    } else {
+      // Expected/quiet until Twilio is configured — not worth alarming logs
+      // over what's currently a known, deliberate gap.
+      console.log(`SMS follow-up skipped for lead ${lead.id}: ${smsResult.error}`);
+    }
+  }
 
   if (outcome === "LINK_EMAILED" && analysisData.prospect_email) {
     if (!settings.bookingUrl) {
@@ -272,6 +294,10 @@ async function handleCallAnalyzed(call: any) {
 function mapDisconnectionReasonToStatus(reason: string | undefined): LeadOutcome {
   switch (reason) {
     case "voicemail_reached":
+    case "ivr_reached":
+      // IVR Hangup is enabled on the agent — these calls never reached a
+      // person, so they should retry/eventually SMS like a voicemail, not
+      // fall into the default bucket below (which suppresses the lead).
       return "NO_ANSWER";
     case "dial_no_answer":
     case "dial_busy":

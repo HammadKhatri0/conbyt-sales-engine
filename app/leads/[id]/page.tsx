@@ -54,6 +54,7 @@ interface Lead {
     emailBody: string | null;
     emailGeneratedAt: string | null;
     emailSentAt: string | null;
+    smsSentAt: string | null;
     callAttempts: CallAttempt[];
 }
 
@@ -334,6 +335,10 @@ export default function LeadProfilePage({ params }: { params: Promise<{ id: stri
                     <Field label="Job Title" value={lead.jobTitle} />
                     <Field label="Seniority" value={lead.seniorityLevel} />
                     <Field label="Website" value={lead.website} />
+                    <Field
+                        label="SMS Follow-up"
+                        value={lead.smsSentAt ? new Date(lead.smsSentAt).toLocaleString() : "Not sent"}
+                    />
                 </div>
             </Section>
 
