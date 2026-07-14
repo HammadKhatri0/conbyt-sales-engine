@@ -2,7 +2,7 @@
 import { Worker } from "bullmq";
 import { redisConnection } from "../lib/redis";
 import { retryQueue } from "../lib/queues";
-import { reactivateCampaignsWithDueRetries, triggerDueCallbacks, reactivateCombinedCampaigns } from "../lib/campaign-engine";
+import { reactivateCampaignsWithDueRetries, triggerDueCallbacks, reactivateCombinedCampaigns, checkForCombinedCampaignReplies } from "../lib/campaign-engine";
 
 const SWEEP_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes — matches Lead.retryAt granularity
 
@@ -18,6 +18,7 @@ retryQueue.add(
 export const retryWorker = new Worker(
   "retry-check",
   async () => {
+    await checkForCombinedCampaignReplies();
     await reactivateCampaignsWithDueRetries();
     await reactivateCombinedCampaigns();
     await triggerDueCallbacks();

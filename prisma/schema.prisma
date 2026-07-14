@@ -18,6 +18,7 @@ enum LeadStatus {
   NO_ANSWER
   WRONG_NUMBER
   DO_NOT_CALL
+  REPLIED
 }
 
 enum LeadSource {
@@ -68,6 +69,7 @@ model Lead {
   emailBody          String?   @db.Text @map("email_body")
   emailGeneratedAt   DateTime? @map("email_generated_at")
   emailSentAt        DateTime? @map("email_sent_at")
+  repliedAt          DateTime? @map("replied_at")
   briefOpenerHook       String?  @db.Text @map("brief_opener_hook")
   briefPainAssumption   String?  @db.Text @map("brief_pain_assumption")
   briefProofPoint       String?  @db.Text @map("brief_proof_point")

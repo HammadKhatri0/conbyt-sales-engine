@@ -12,11 +12,27 @@ export interface NewsSummary {
   summary: string | null;
 }
 
-export async function researchCompanyNews(companyName: string): Promise<NewsSummary | null> {
+export interface CompanyContext {
+  industry?: string | null;
+  location?: string | null;
+}
+
+export async function researchCompanyNews(
+  companyName: string,
+  context: CompanyContext = {}
+): Promise<NewsSummary | null> {
   if (!companyName) return null;
 
   try {
-    const query = encodeURIComponent(companyName);
+    // Exact-phrase match (quoted) rather than a bag-of-words match — without
+    // quotes, Google News RSS treats a multi-word company name as "match any
+    // of these words," which is a major source of false positives for
+    // generic names. Appending a location/industry qualifier (when we have
+    // one) narrows the result set further, at the search level rather than
+    // relying entirely on the LLM to filter noise after the fact.
+    const qualifier = context.location || context.industry || "";
+    const searchTerms = qualifier ? `"${companyName}" ${qualifier}` : `"${companyName}"`;
+    const query = encodeURIComponent(searchTerms);
     const feedUrl = `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
     const feed = await parser.parseURL(feedUrl);
 
@@ -37,11 +53,23 @@ export async function researchCompanyNews(companyName: string): Promise<NewsSumm
       .map((a) => `- ${a.title} (${a.pubDate ?? "date unknown"})`)
       .join("\n");
 
-    const prompt = `These are recent news headlines mentioning "${companyName}". Extract growth signals (expansion, funding, new locations), problem signals (layoffs, complaints, issues), and hiring signals. Respond with JSON only, no markdown fences:
+    const contextLine = [
+      context.industry ? `Industry: ${context.industry}` : null,
+      context.location ? `Location: ${context.location}` : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    const prompt = `These are recent news headlines returned by searching for "${companyName}".
+${contextLine ? `What we know about the actual company: ${contextLine}.` : "No additional company details are known beyond the name."}
+
+IMPORTANT: A generic or common business name can return headlines about a completely different, unrelated company that happens to share the name. Before extracting anything, judge for each headline whether it plausibly refers to THIS specific company (matching what we know about it) or a same-named but different entity. If ${contextLine ? "the company details above don't support a headline being about this company" : "you can't reasonably tell whether a headline is about this specific company"}, exclude that headline entirely rather than guessing.
+
+Extract growth signals (expansion, funding, new locations), problem signals (layoffs, complaints, issues), and hiring signals — but ONLY from headlines you're reasonably confident are actually about this company. Respond with JSON only, no markdown fences:
 
 {
-  "signals": ["short signal phrase, max 5, empty array if nothing relevant found"],
-  "summary": "one sentence overall summary, or null if headlines are irrelevant/unrelated to this company specifically"
+  "signals": ["short signal phrase, max 5, empty array if nothing confidently relevant found"],
+  "summary": "one sentence overall summary, or null if no headlines are confidently about this specific company"
 }
 
 Headlines:

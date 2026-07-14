@@ -24,7 +24,9 @@ export const enrichmentWorker = new Worker(
     try {
       const [websiteSummary, newsSummary] = await Promise.all([
         lead.website ? researchWebsite(lead.website) : Promise.resolve(null),
-        lead.company ? researchCompanyNews(lead.company) : Promise.resolve(null),
+        lead.company
+          ? researchCompanyNews(lead.company, { industry: lead.industry, location: lead.location })
+          : Promise.resolve(null),
       ]);
 
       const techStack = [

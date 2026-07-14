@@ -68,6 +68,7 @@ const STATUS_STYLES: Record<string, string> = {
     NO_ANSWER: "bg-gray-500/15 text-gray-300 border-gray-500/30",
     WRONG_NUMBER: "bg-red-500/15 text-red-300 border-red-500/30",
     DO_NOT_CALL: "bg-red-700/15 text-red-400 border-red-700/30",
+    REPLIED: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",
 };
 
 function scoreBadgeColor(score: number | null): string {

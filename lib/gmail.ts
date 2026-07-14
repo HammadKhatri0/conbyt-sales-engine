@@ -2,9 +2,21 @@
 import { google } from "googleapis";
 import { getSettings, updateSettings } from "@/lib/settings";
 
-// Least-privilege scope — only allows sending mail, not reading the inbox.
+// Send + read access. Read is needed for reply detection in Combined
+// Campaigns (checking whether a lead replied before we call them). Using
+// the broader gmail.readonly rather than gmail.metadata here specifically
+// because metadata-scoped tokens have historically had inconsistent support
+// for the from:/after: search operators this feature depends on — worth
+// revisiting if you want a tighter scope and are willing to verify that
+// works reliably on a live account first.
+//
+// ⚠️ SCOPE CHANGE: anyone who connected Gmail before this change has a
+// refresh token issued under the old send-only scope. That token will NOT
+// gain read access automatically — go to Settings and disconnect/reconnect
+// Gmail once after deploying this change.
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
 
@@ -16,7 +28,7 @@ function getRedirectUri(): string {
   return `${baseUrl.replace(/\/$/, "")}/api/auth/gmail/callback`;
 }
 
-async function getOAuth2Client() {
+export async function getOAuth2Client() {
   const settings = await getSettings();
 
   if (!settings.gmailClientId || !settings.gmailClientSecret) {
@@ -126,4 +138,38 @@ export async function sendGmailEmail(
     console.error("Failed to send Gmail email:", err);
     return { success: false, error: err?.message ?? "Failed to send email" };
   }
+}
+
+/**
+ * Checks whether the given address has sent a message to the connected
+ * Gmail inbox at any point since `sinceDate`. Used by Combined Campaigns to
+ * detect a reply before the scheduled follow-up call fires.
+ *
+ * Uses Gmail's search query syntax (from:/after:) rather than fetching and
+ * filtering messages client-side — cheaper and avoids pagination for what's
+ * ultimately a yes/no check.
+ */
+export async function hasRepliedSince(fromEmail: string, sinceDate: Date): Promise<boolean> {
+  const settings = await getSettings();
+
+  if (!settings.gmailConnected || !settings.gmailRefreshToken) {
+    throw new Error("Gmail is not connected in Settings");
+  }
+
+  const oauth2Client = await getOAuth2Client();
+  oauth2Client.setCredentials({ refresh_token: settings.gmailRefreshToken });
+
+  const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+
+  // Gmail's `after:` operator takes a Unix timestamp in seconds.
+  const afterEpochSeconds = Math.floor(sinceDate.getTime() / 1000);
+  const query = `from:${fromEmail} after:${afterEpochSeconds}`;
+
+  const res = await gmail.users.messages.list({
+    userId: "me",
+    q: query,
+    maxResults: 1,
+  });
+
+  return (res.data.messages?.length ?? 0) > 0;
 }

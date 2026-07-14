@@ -5,7 +5,7 @@ import { getTimezoneForPhone, isWithinCallableWindow } from "@/lib/timezone";
 import { getActiveICPProfile } from "@/lib/icp";
 import { getSettings } from "@/lib/settings";
 import { generateOutboundEmail } from "@/lib/email-generation";
-import { sendGmailEmail } from "@/lib/gmail";
+import { sendGmailEmail, hasRepliedSince } from "@/lib/gmail";
 
 const RECHECK_DELAY_MS = 5 * 60 * 1000; // if no lead is callable right now, recheck in 5 min
 const EMAIL_RECHECK_DELAY_MS = 5 * 60 * 1000; // if the email loop is blocked (window/rate limit), recheck in 5 min
@@ -272,6 +272,62 @@ export async function reactivateCampaignsWithDueRetries() {
     if (campaign?.status === "COMPLETED") {
       console.log(`Reactivating campaign ${campaignId} — retry leads are now due.`);
       await resumeCampaign(campaignId);
+    }
+  }
+}
+
+/**
+ * Reply detection for Combined Campaigns. Checks every lead that's been
+ * emailed, hasn't replied yet, and hasn't been called yet, against the
+ * connected Gmail inbox. Any lead found to have replied is pulled out of
+ * the QUEUED state entirely — dialNextLead/reactivateCombinedCampaigns both
+ * filter on status: "QUEUED", so this alone is enough to stop them from
+ * ever being called, without touching the dial-selection queries.
+ *
+ * Per spec: a lead who replied skips the call and moves to a human
+ * follow-up queue — modeled here as the REPLIED status, filterable on the
+ * Leads page like any other outcome.
+ *
+ * Run this BEFORE reactivateCombinedCampaigns in the sweep — otherwise a
+ * lead who just replied could still get swept into a call in the same
+ * pass if the reply check ran second.
+ */
+export async function checkForCombinedCampaignReplies() {
+  const settings = await getSettings();
+  if (!settings.gmailConnected) {
+    return; // nothing to check without a connected inbox
+  }
+
+  const pendingLeads = await prisma.lead.findMany({
+    where: {
+      status: "QUEUED",
+      emailSentAt: { not: null },
+      repliedAt: null,
+      email: { not: null },
+      campaign: { emailBeforeCall: true },
+    },
+  });
+
+  if (pendingLeads.length === 0) return;
+
+  console.log(`Checking ${pendingLeads.length} combined-campaign lead(s) for email replies...`);
+
+  for (const lead of pendingLeads) {
+    if (!lead.email || !lead.emailSentAt) continue;
+
+    try {
+      const replied = await hasRepliedSince(lead.email, lead.emailSentAt);
+      if (replied) {
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: { status: "REPLIED", repliedAt: new Date() },
+        });
+        console.log(`Lead ${lead.id} (${lead.email}) replied by email — call skipped, moved to human follow-up.`);
+      }
+    } catch (err: any) {
+      // A single lead's check failing (e.g. transient Gmail API error)
+      // shouldn't block checking the rest of the batch.
+      console.error(`Reply check failed for lead ${lead.id}:`, err.message);
     }
   }
 }
